@@ -499,7 +499,8 @@ class CoreApp:
         assert self._workspaces is not None
         cmd = FileSearchCommand.model_validate(params)
         try:
-            matches = self._workspaces.search(
+            matches = await asyncio.to_thread(
+                self._workspaces.search,
                 cmd.workspace_id,
                 cmd.query,
                 max_results=cmd.max_results,

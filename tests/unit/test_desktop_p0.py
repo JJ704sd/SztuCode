@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,7 @@ import pytest
 from sztu_code.core.app import CoreApp
 from sztu_code.core.bus.envelope import HandlerError
 from sztu_code.core.permissions.manager import PermissionManager
+from sztu_code.core.workspace import WorkspaceManager
 
 
 class _BlockingSessions:
@@ -120,6 +122,39 @@ async def test_run_replay_reads_persisted_events(tmp_path: Path, monkeypatch: py
 
     assert result.run_id == "run-replay"
     assert result.events == [{"type": "run.started", "run_id": "run-replay"}]
+
+
+# 功能：验证耗时的 file.search 不占用 daemon 事件循环，其他异步命令仍可及时调度。
+# 设计：让真实 WorkspaceManager 的搜索边界同步停顿 200ms，同时测量 20ms 心跳；旧实现会把心跳一起拖到扫描结束。
+async def test_file_search_handler_keeps_event_loop_responsive(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "project"
+    root.mkdir()
+    manager = WorkspaceManager(tmp_path / "workspaces.json")
+    workspace = manager.open(str(root))
+    original_search = manager.search
+
+    def slow_search(workspace_id: str, query: str, *, max_results: int = 100) -> list[dict[str, object]]:
+        time.sleep(0.2)
+        return original_search(workspace_id, query, max_results=max_results)
+
+    monkeypatch.setattr(manager, "search", slow_search)
+    app = CoreApp()
+    app._workspaces = manager
+
+    search_task = asyncio.create_task(app._file_search_handler({
+        "workspace_id": workspace.id,
+        "query": "missing",
+        "max_results": 10,
+    }))
+    started = time.perf_counter()
+    await asyncio.sleep(0.02)
+    heartbeat_elapsed = time.perf_counter() - started
+    await search_task
+
+    assert heartbeat_elapsed < 0.1
 
 
 # 功能：验证 permission.set_mode 走类型化协议并同步更新后端策略状态。

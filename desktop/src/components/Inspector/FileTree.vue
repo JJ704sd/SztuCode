@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from "vue";
+import { defineAsyncComponent, onMounted, ref, watch } from "vue";
 import { FileText, Folder, Folders, LoaderCircle } from "@lucide/vue";
 import { readFile, workspaceTree, type WorkspaceNode } from "../../services/sztu-runtime";
-import CodePreview from "./CodePreview.vue";
 import FileTreeNode from "./FileTreeNode.vue";
+
+const CodePreview = defineAsyncComponent(() => import("./CodePreview.vue"));
 
 const props = defineProps<{
   workspaceId: string;
