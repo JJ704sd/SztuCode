@@ -10,12 +10,12 @@ import {
   changeDiff, listChanges, readFile,
   type ChangeSummary,
 } from "../../services/sztu-runtime";
-import BrowserWebview from "./BrowserWebview.vue";
-import CodePreview from "./CodePreview.vue";
 import FileTree from "./FileTree.vue";
 import { fileTypeIconUrl } from "../../utils/fileIcon";
 import type { TimelineStep } from "../timeline/types";
 
+const BrowserWebview = defineAsyncComponent(() => import("./BrowserWebview.vue"));
+const CodePreview = defineAsyncComponent(() => import("./CodePreview.vue"));
 const SandboxTerminal = defineAsyncComponent(() => import("./SandboxTerminal.vue"));
 
 const props = defineProps<{
