@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import heapq
 import json
 import mimetypes
 import os
 import subprocess
 from codecs import BOM_UTF8, BOM_UTF16_BE, BOM_UTF16_LE
+from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -42,6 +44,24 @@ class WorkspaceManager:
         "build",
         "dist",
         "node_modules",
+    }
+    _SEARCH_IGNORED_NAMES = {
+        ".cache",
+        ".git",
+        ".hypothesis",
+        ".mypy_cache",
+        ".nox",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".tox",
+        ".venv",
+        "__pycache__",
+        "build",
+        "coverage",
+        "dist",
+        "htmlcov",
+        "node_modules",
+        "target",
     }
     _CHANGE_IGNORED_PARTS = {
         ".cache",
@@ -218,14 +238,9 @@ class WorkspaceManager:
         workspace = self.get(workspace_id)
         root = Path(workspace.path)
         matches: list[dict[str, object]] = []
-        for path in sorted(root.rglob("*"), key=lambda item: item.as_posix().lower()):
+        for path in self._iter_search_files(root):
             if len(matches) >= max_results:
                 break
-            is_ignored = any(
-                part in {".git", "__pycache__", "node_modules"} for part in path.parts
-            )
-            if not path.is_file() or is_ignored:
-                continue
             try:
                 if path.stat().st_size > 1_000_000:
                     continue
@@ -246,6 +261,36 @@ class WorkspaceManager:
                     if len(matches) >= max_results:
                         break
         return matches
+
+    # 以稳定路径顺序流式枚举可搜索文件，并在进入目录前剪枝依赖、缓存和构建产物
+    @classmethod
+    def _iter_search_files(cls, root: Path) -> Iterator[Path]:
+        pending: list[tuple[str, str, Path]] = []
+
+        # 将单层目录项加入最小堆，使递归过程保持与完整路径排序一致的顺序
+        def push_directory(directory: Path) -> None:
+            try:
+                entries = directory.iterdir()
+                for entry in entries:
+                    if entry.name in cls._SEARCH_IGNORED_NAMES:
+                        continue
+                    relative = entry.relative_to(root).as_posix()
+                    heapq.heappush(pending, (relative.lower(), relative, entry))
+            except OSError:
+                return
+
+        push_directory(root)
+        while pending:
+            _normalized, _relative, path = heapq.heappop(pending)
+            try:
+                if path.is_dir():
+                    if not path.is_symlink():
+                        push_directory(path)
+                    continue
+                if path.is_file():
+                    yield path
+            except OSError:
+                continue
 
     # 返回 Git 工作区中未提交文件的状态摘要，供变更审阅面板展示
     def list_changes(self, workspace_id: str) -> list[dict[str, str]]:

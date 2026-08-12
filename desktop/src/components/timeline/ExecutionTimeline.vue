@@ -360,7 +360,7 @@ const turns = computed<TurnView[]>(() => {
           </section>
 
           <section v-if="turn.summaryText" class="turn-result" aria-label="任务结果">
-            <TokenStream :tokens="[]" :final-text="turn.summaryText" />
+            <TokenStream :tokens="[]" :final-text="turn.summaryText" :streaming="turn.state === 'running' || turn.state === 'waiting'" />
           </section>
 
           <div v-if="isTurnExpanded(turn) && turn.state !== 'running' && turn.state !== 'waiting' && turn.stateLabel !== '工作记录'" class="turn-status turn-status--result" :class="turn.state">

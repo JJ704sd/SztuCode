@@ -34,6 +34,40 @@ def test_workspace_open_persists_tree_and_search(tmp_path: Path) -> None:
     restored = WorkspaceManager(recent_file)
     assert restored.list_recent() == [workspace]
 
+
+# 功能：验证文本搜索会剪枝常见依赖、缓存和构建目录，只返回项目源码命中。
+# 设计：在多个生成目录中写入同一关键字，并以根目录源码作为唯一可见结果，覆盖递归前剪枝而非命中后过滤。
+def test_workspace_search_prunes_generated_directories(tmp_path: Path) -> None:
+    root = tmp_path / "project"
+    (root / "src").mkdir(parents=True)
+    (root / "src" / "main.py").write_text("SEARCH_TARGET\n", encoding="utf-8")
+    (root / ".vscode").mkdir()
+    (root / ".vscode" / "settings.json").write_text(
+        '{"note": "SEARCH_TARGET"}\n',
+        encoding="utf-8",
+    )
+    for relative in (
+        ".mypy_cache/state.json",
+        ".pytest_cache/state.txt",
+        ".ruff_cache/state.txt",
+        ".venv/Lib/site-packages/pkg.py",
+        "build/generated.txt",
+        "desktop/dist/bundle.js",
+        "desktop/node_modules/pkg/index.js",
+        "desktop/src-tauri/target/debug/generated.txt",
+    ):
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("SEARCH_TARGET\n", encoding="utf-8")
+
+    manager = WorkspaceManager(tmp_path / "workspaces.json")
+    workspace = manager.open(str(root))
+
+    assert manager.search(workspace.id, "SEARCH_TARGET") == [
+        {"path": ".vscode/settings.json", "line": 1, "preview": '{"note": "SEARCH_TARGET"}'},
+        {"path": "src/main.py", "line": 1, "preview": "SEARCH_TARGET"},
+    ]
+
 def test_workspace_archive_resume_persists(tmp_path: Path) -> None:
     first = tmp_path / "first"
     second = tmp_path / "second"

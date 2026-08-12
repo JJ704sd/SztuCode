@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   AlertTriangle, Archive, ArrowLeft, BookOpen, CalendarClock, Check, ChevronDown, CirclePlus, Clock, Coins, Ellipsis, Folder, FolderOpen, FolderPlus, FolderSearch,
   GitBranch, Globe2, GripVertical, LayoutDashboard, MessageCircle, Minus, PanelLeftClose, PanelLeftOpen,
@@ -11,14 +11,10 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import ProjectInspector from "./components/Inspector/ProjectInspector.vue";
 import TaskSummaryPopup from "./components/Inspector/TaskSummaryPopup.vue";
 import ModelConfigMenu from "./components/ModelConfig/ModelConfigMenu.vue";
-import ModelManager from "./components/ModelConfig/ModelManager.vue";
 import SessionActions from "./components/session/SessionActions.vue";
-import ChatPortal, { type ChatView } from "./components/Chat/ChatPortal.vue";
-import DiffReview from "./components/Diff/DiffReview.vue";
-import BottomDiffPreview from "./components/Diff/BottomDiffPreview.vue";
+import type { ChatView } from "./components/Chat/ChatPortal.vue";
 import ExecutionTimeline from "./components/timeline/ExecutionTimeline.vue";
 import SlashCommandMenu from "./components/CommandPalette/SlashCommandMenu.vue";
-import SkillCenter from "./components/Skills/SkillCenter.vue";
 import { slashMenuItems } from "./components/CommandPalette/slash-menu";
 import type { PermissionDecision, PermissionState, PlanItem, TimelineEvent, TimelineStep, ToolCallEntry, WorkflowTaskEntry } from "./components/timeline/types";
 import { isMacOSPlatform } from "./lib/platform";
@@ -29,6 +25,12 @@ import {
   resumeWorkspace, sendPrompt, sessionHistory, setNativeSettings, setRuntimeSettings, workspaceStatus,
   type Attachment, type CcswitchProvider, type ImageBlock, type ProviderStatus, type RuntimeSettings, type Session, type Workspace,
 } from "./services/sztu-runtime";
+
+const BottomDiffPreview = defineAsyncComponent(() => import("./components/Diff/BottomDiffPreview.vue"));
+const ChatPortal = defineAsyncComponent(() => import("./components/Chat/ChatPortal.vue"));
+const DiffReview = defineAsyncComponent(() => import("./components/Diff/DiffReview.vue"));
+const ModelManager = defineAsyncComponent(() => import("./components/ModelConfig/ModelManager.vue"));
+const SkillCenter = defineAsyncComponent(() => import("./components/Skills/SkillCenter.vue"));
 
 type Page = "work" | "chat" | "board" | "skills" | "automations" | "webbridge" | "settings" | "diff";
 type ReviewContext = { workspaceId: string; runId: string; paths: string[] };

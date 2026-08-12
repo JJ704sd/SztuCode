@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
@@ -77,6 +78,11 @@ async def test_scope_global_receives_all_run_ids() -> None:
     await broadcaster.handle(_run_started("r2"))
 
     assert writer.write.call_count == 2  # type: ignore[attr-defined]
+    received_run_ids = [
+        json.loads(call.args[0].rstrip(b"\n"))["event"]["run_id"]
+        for call in writer.write.call_args_list  # type: ignore[attr-defined]
+    ]
+    assert received_run_ids == ["r1", "r2"]
 
 
 # 功能：验证 scope="run:<id>" 只接收匹配 run_id 的事件，过滤其他 run_id
@@ -121,3 +127,56 @@ async def test_dead_connection_removed_after_failure() -> None:
     writer.write.reset_mock()  # type: ignore[attr-defined]
     await broadcaster.handle(event)  # no subscribers remain
     writer.write.assert_not_called()  # type: ignore[attr-defined]
+
+
+# 功能：验证慢客户端的网络背压不会拖慢 EventBus 发布路径，同时该客户端仍按序收到事件。
+# 设计：用独立延迟任务在 200ms 后释放 drain；旧实现的 handle 会同步等待，新实现应在 100ms 内完成入队。
+async def test_slow_subscriber_does_not_block_event_publication() -> None:
+    broadcaster = IpcEventBroadcaster()
+    writer = _make_writer()
+    release = asyncio.Event()
+
+    async def slow_drain() -> None:
+        await release.wait()
+
+    writer.drain = AsyncMock(side_effect=slow_drain)  # type: ignore[method-assign]
+    broadcaster.subscribe(writer, topics=["run.*"])
+
+    async def release_later() -> None:
+        await asyncio.sleep(0.2)
+        release.set()
+
+    release_task = asyncio.create_task(release_later())
+    started = time.perf_counter()
+    await broadcaster.handle(_run_started())
+    elapsed = time.perf_counter() - started
+    await release_task
+    await asyncio.sleep(0)
+
+    assert elapsed < 0.1
+    writer.write.assert_called_once()  # type: ignore[attr-defined]
+
+
+# 功能：验证客户端持续落后并填满发送队列时会被主动断开，避免 daemon 无界积压事件。
+# 设计：把队列上限压到 1，并阻塞首个 drain；连续发布三条事件后断言 writer 被关闭且后续不再接收写入。
+async def test_slow_subscriber_is_disconnected_when_queue_overflows() -> None:
+    broadcaster = IpcEventBroadcaster(max_pending_events=1)
+    writer = _make_writer()
+    release = asyncio.Event()
+
+    async def slow_drain() -> None:
+        await release.wait()
+
+    writer.drain = AsyncMock(side_effect=slow_drain)  # type: ignore[method-assign]
+    broadcaster.subscribe(writer, topics=["run.*"])
+
+    await broadcaster.handle(_run_started("r1"))
+    await broadcaster.handle(_run_started("r2"))
+    await broadcaster.handle(_run_started("r3"))
+    release.set()
+    await asyncio.sleep(0)
+
+    writer.close.assert_called_once()  # type: ignore[attr-defined]
+    writes_before = writer.write.call_count  # type: ignore[attr-defined]
+    await broadcaster.handle(_run_started("r4"))
+    assert writer.write.call_count == writes_before  # type: ignore[attr-defined]
